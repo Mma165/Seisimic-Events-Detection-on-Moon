@@ -3,9 +3,6 @@
 # The user can specify the path to the data file, the engine to use, and engine specific parameters.
 # The CLI will load the data, run the specified engine, and save the results to the output directory.
 
-from engines.bandpass import run_bandpass_engine
-from engines.lstm import run_LSTM_engine
-from engines.yolo import run_YOLO_engine
 import argparse
 import os
 
@@ -20,13 +17,16 @@ def main():
     args = parser.parse_args()
 
     if args.engine == 'bandpass':
+        from engines.bandpass import run_bandpass_engine
         run_bandpass_engine(args.data_path)
     elif args.engine == 'lstm':
+        from engines.lstm import run_LSTM_engine
         if not args.model_path or not args.scaler_path:
             print("Model path and scaler path are required for LSTM engine.")
             return
         run_LSTM_engine(args.model_path, args.scaler_path, args.data_path)
     elif args.engine == 'yolo':
+        from engines.yolo import run_YOLO_engine
         if not args.model_path:
             print("Model path is required for YOLO engine.")
             return

@@ -21,9 +21,16 @@ class LSTMInferenceEngineV2:
         scaler: StandardScaler = None
     ):
         self.model = model
+        expected = model.input_shape[1]
+        if expected is not None and int(expected) != window_size:
+            raise ValueError(f"Model expects {expected} samples, got {window_size}")
+        if not 0 <= overlap < 1:
+            raise ValueError("overlap must be in [0, 1)")
+        if scaler is None:
+            raise ValueError("A fitted training scaler is required")
         self.window_size = window_size
         self.overlap = overlap
-        self.stride = int(window_size * (1 - overlap))
+        self.stride = max(1, round(window_size * (1 - overlap)))
         self.detection_threshold = detection_threshold
         self.scaler = scaler
 
@@ -37,7 +44,7 @@ class LSTMInferenceEngineV2:
         windows = []
         window_times = []
 
-        for i in range(0, len(data) - self.window_size, self.stride):
+        for i in range(0, len(data) - self.window_size + 1, self.stride):
             window = data.iloc[i:i + self.window_size]
 
             if len(window) == self.window_size:
@@ -49,9 +56,13 @@ class LSTMInferenceEngineV2:
                 amplitude_window = window[['amplitude']].values
                 windows.append(amplitude_window)
 
+        if not windows:
+            return np.empty((0, self.window_size, 1)), []
         X = np.array(windows)
+        if not np.isfinite(X).all():
+            raise ValueError("Nonfinite samples require explicit quality control")
 
-        # Normalize each window independently
+        # Apply the saved training-set scaling; no inference-time fitting
         X_reshaped = X.reshape(-1, X.shape[-1])
         X_scaled = self.scaler.transform(X_reshaped)
         X = X_scaled.reshape(X.shape)
@@ -77,6 +88,9 @@ class LSTMInferenceEngineV2:
         """
         # Prepare windows for inference
         X, window_times = self.prepare_inference_windows(data)
+
+        if len(X) == 0:
+            return pd.DataFrame(columns=['start_time', 'end_time'])
 
         # Get model predictions
         predictions = self.model.predict(X, verbose=0)
@@ -151,8 +165,8 @@ class LSTMInferenceEngineV2:
         if len(detections) > 0:
             for _, detection in detections.iterrows():
                 plt.axvspan(
-                    detection['start_time'] - timedelta(seconds=60*10),
-                    detection['end_time'] + timedelta(seconds=60*40),
+                    detection['start_time'],
+                    detection['end_time'],
                     color='yellow',
                     alpha=0.3,
                 )
@@ -176,7 +190,7 @@ def run_LSTM_engine(model_path: str, scaler_path, data_path: pd.DataFrame):
     # Initialize inference engine
     engine = LSTMInferenceEngineV2(
         model=model,
-        window_size=1000,
+        window_size=int(model.input_shape[1]),
         overlap=0.8,
         detection_threshold=0.5,
         scaler=scaler  # Use the same scaler used during training

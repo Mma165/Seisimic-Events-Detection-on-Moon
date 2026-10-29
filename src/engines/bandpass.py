@@ -18,12 +18,16 @@ def bandpass_filter(data, lowcut, highcut, fs, order=4):
     low = lowcut / nyquist
     high = highcut / nyquist
     b, a = butter(order, [low, high], btype='band')  # Create filter coefficients
-    filtered_data = filtfilt(b, a, data.fillna(0))  # Apply filter and handle missing values
+    if not np.isfinite(np.asarray(data)).all():
+        raise ValueError('Nonfinite samples require explicit quality control')
+    filtered_data = filtfilt(b, a, data)  # Apply filter and handle missing values
     return filtered_data
 
 # This template is used for cross-correlation with real data.
-def create_synthetic_template(sampling_rate=6.625, frequency=6.6, duration=20):
-    t = np.linspace(0, duration, int(sampling_rate * duration))  # Time vector
+def create_synthetic_template(sampling_rate=6.625, frequency=1.0, duration=20):
+    t = np.arange(int(sampling_rate * duration)) / sampling_rate  # Time vector
+    if not 0 < frequency < sampling_rate / 2:
+        raise ValueError("Template frequency must lie below Nyquist")
     template = np.sin(2 * np.pi * frequency * t)  # Create sine wave
     return template
 
@@ -77,7 +81,7 @@ def run_bandpass_engine(data_path, sampling_rate=6.625, lowcut=0.4, highcut=2.0)
     file_name = os.path.basename(data_path)
     data = pd.read_csv(data_path)  # Load data
 
-    template = create_synthetic_template(sampling_rate, 6.6, 20)  # Create synthetic template
+    template = create_synthetic_template(sampling_rate, 1.0, 20)  # Create synthetic template
     filtered_data = bandpass_filter(data['velocity(m/s)'], lowcut, highcut, sampling_rate)  # Filter data
     cross_corr, threshold = apply_matched_filter(filtered_data, template)  # Apply matched filter
     
